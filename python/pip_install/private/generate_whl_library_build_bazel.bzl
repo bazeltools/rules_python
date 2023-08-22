@@ -89,6 +89,7 @@ def generate_whl_library_build_bazel(
         repo_prefix,
         dependencies,
         data_exclude,
+        force_data_exclusions,
         tags,
         entry_points,
         annotation = None):
@@ -137,19 +138,22 @@ def generate_whl_library_build_bazel(
         if annotation.additive_build_content:
             additional_content.append(annotation.additive_build_content)
 
-    _data_exclude = [
-        "**/* *",
-        "**/*.py",
-        "**/*.pyc",
-        "**/*.pyc.*",  # During pyc creation, temp files named *.pyc.NNNN are created
-        # RECORD is known to contain sha256 checksums of files which might include the checksums
-        # of generated files produced when wheels are installed. The file is ignored to avoid
-        # Bazel caching issues.
-        "**/*.dist-info/RECORD",
-    ]
-    for item in data_exclude:
-        if item not in _data_exclude:
-            _data_exclude.append(item)
+    if force_data_exclusions:
+        _data_exclude = data_exclude
+    else:
+        _data_exclude = [
+            "**/* *",
+            "**/*.py",
+            "**/*.pyc",
+            "**/*.pyc.*",  # During pyc creation, temp files named *.pyc.NNNN are created
+            # RECORD is known to contain sha256 checksums of files which might include the checksums
+            # of generated files produced when wheels are installed. The file is ignored to avoid
+            # Bazel caching issues.
+            "**/*.dist-info/RECORD",
+        ]
+        for item in data_exclude:
+            if item not in _data_exclude:
+                _data_exclude.append(item)
 
     lib_dependencies = [
         "@" + repo_prefix + normalize_name(d) + "//:" + _PY_LIBRARY_LABEL

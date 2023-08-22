@@ -496,6 +496,13 @@ to control this flag.
     "pip_data_exclude": attr.string_list(
         doc = "Additional data exclusion parameters to add to the pip packages BUILD file.",
     ),
+    "force_data_exclusions": attr.bool(
+        doc = """\
+rules_python will exclude **/* *, **/*.py, **/*.pyc, **/*.pyc.*, and **/*.dist-info/RECORD files by default.
+Do you want to force pip package BUILD files to *only* use the specified `pip_data_exclude` exclusions?
+""",
+        default = False,
+    ),
     "python_interpreter": attr.string(
         doc = """\
 The python interpreter to use. This can either be an absolute path or the name
@@ -665,6 +672,7 @@ def _whl_library_impl(rctx):
         repo_prefix = rctx.attr.repo_prefix,
         dependencies = metadata["deps"],
         data_exclude = rctx.attr.pip_data_exclude,
+        force_data_exclusions = rctx.attr.force_data_exclusions,
         tags = [
             "pypi_name=" + metadata["name"],
             "pypi_version=" + metadata["version"],
