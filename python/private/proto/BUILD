@@ -28,5 +28,5 @@ proto_lang_toolchain(
     name = "python_toolchain",
     command_line = "--python_out=%s",
     progress_message = "Generating Python proto_library %{label}",
-    runtime = "@com_google_protobuf//:protobuf_python",
+    runtime = "@pip_protobuf//:pkg",
 )
