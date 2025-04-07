@@ -232,7 +232,8 @@ def whl_library_targets(
             # RECORD is known to contain sha256 checksums of files which might include the checksums
             # of generated files produced when wheels are installed. The file is ignored to avoid
             # Bazel caching issues.
-            "**/*.dist-info/RECORD",
+            # AIMS-PTR: Allow RECORD to go through to allow metaflow_extensions to be discovered.
+            # "**/*.dist-info/RECORD",
         ] + glob_excludes.version_dependent_exclusions()
         for item in data_exclude:
             if item not in _data_exclude:
