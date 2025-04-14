@@ -157,6 +157,7 @@ def main() -> None:
 
     pip_args = (
         [sys.executable, "-m", "pip"]
+        + ["--no-cache-dir"] # attempt to work around corrupted wheel bug
         + (["--isolated"] if args.isolated else [])
         + (["download", "--only-binary=:all:"] if args.download_only else ["wheel"])
         + ["--no-deps"]
