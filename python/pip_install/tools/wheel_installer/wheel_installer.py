@@ -155,6 +155,12 @@ def main() -> None:
 
     _configure_reproducible_wheels()
 
+    # Upgrade pip
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
+        check=True, env=os.environ
+    )
+
     pip_args = (
         [sys.executable, "-m", "pip"]
         + (["--isolated"] if args.isolated else [])
