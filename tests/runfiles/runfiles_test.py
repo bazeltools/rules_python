@@ -525,6 +525,272 @@ class RunfilesTest(unittest.TestCase):
                 r.Rlocation("config.json", "protobuf~3.19.2"), dir + "/config.json"
             )
 
+    def testManifestBasedRlocationWithCompactRepoMappingPrefixes(self) -> None:
+        """Test the new compact repo mapping format with prefixes."""
+        with _MockFile(
+            contents=[
+                "+deps+*,aaa,target_aaa",
+                "+deps+*,bbb,target_bbb", 
+                "+deps+dep1,aaa,exact_target_aaa",  # Should take precedence over prefix
+                "+other+*,ccc,target_ccc",
+            ]
+        ) as rm, _MockFile(
+            contents=[
+                "_repo_mapping " + rm.Path(),
+                "target_aaa/file1 /path/to/target_aaa/file1",
+                "exact_target_aaa/file2 /path/to/exact_target_aaa/file2",
+                "target_bbb/file3 /path/to/target_bbb/file3",
+                "target_ccc/file4 /path/to/target_ccc/file4",
+            ],
+        ) as mf:
+            r = runfiles.CreateManifestBased(mf.Path())
+
+            # Test prefixed mapping
+            self.assertEqual(
+                r.Rlocation("aaa/file1", "+deps+dep2"),
+                "/path/to/target_aaa/file1",
+            )
+            self.assertEqual(
+                r.Rlocation("bbb/file3", "+deps+dep3"),
+                "/path/to/target_bbb/file3",
+            )
+            
+            # Test exact mapping takes precedence over prefix
+            self.assertEqual(
+                r.Rlocation("aaa/file2", "+deps+dep1"),
+                "/path/to/exact_target_aaa/file2",
+            )
+            
+            # Test different prefix
+            self.assertEqual(
+                r.Rlocation("ccc/file4", "+other+some_repo"),
+                "/path/to/target_ccc/file4",
+            )
+            
+            # Test non-matching prefix - should return None since file doesn't exist in manifest
+            self.assertIsNone(r.Rlocation("aaa/file1", "+different+repo"))
+
+    def testManifestBasedRlocationWithCompactRepoMappingPrecedence(self) -> None:
+        """Test that order matters for prefixed mappings (earlier prefix wins)."""
+        with _MockFile(
+            contents=[
+                "+deps+*,shared,first_target",
+                "+deps+dep*,shared,second_target",  # More specific but comes second
+            ]
+        ) as rm, _MockFile(
+            contents=[
+                "_repo_mapping " + rm.Path(),
+                "first_target/file1 /path/to/first/file1",
+                "second_target/file2 /path/to/second/file2",
+            ],
+        ) as mf:
+            r = runfiles.CreateManifestBased(mf.Path())
+
+            # Since "+deps+*" comes first, it should match "+deps+dep1" before "+deps+dep*"
+            self.assertEqual(
+                r.Rlocation("shared/file1", "+deps+dep1"),
+                "/path/to/first/file1",
+            )
+
+    def testDirectoryBasedRlocationWithCompactRepoMappingPrefixes(self) -> None:
+        """Test the new compact repo mapping format with prefixes for directory-based runfiles."""
+        with _MockFile(
+            name="_repo_mapping",
+            contents=[
+                "+deps+*,aaa,target_aaa",
+                "+deps+*,bbb,target_bbb",
+                "+deps+dep1,aaa,exact_target_aaa",  # Should take precedence over prefix
+                "+other+*,ccc,target_ccc",
+            ],
+        ) as rm:
+            dir = os.path.dirname(rm.Path())
+            r = runfiles.CreateDirectoryBased(dir)
+
+            # Test prefixed mapping
+            self.assertEqual(
+                r.Rlocation("aaa/file1", "+deps+dep2"),
+                dir + "/target_aaa/file1",
+            )
+            self.assertEqual(
+                r.Rlocation("bbb/file3", "+deps+dep3"),
+                dir + "/target_bbb/file3",
+            )
+            
+            # Test exact mapping takes precedence over prefix
+            self.assertEqual(
+                r.Rlocation("aaa/file2", "+deps+dep1"),
+                dir + "/exact_target_aaa/file2",
+            )
+            
+            # Test different prefix
+            self.assertEqual(
+                r.Rlocation("ccc/file4", "+other+some_repo"),
+                dir + "/target_ccc/file4",
+            )
+            
+            # Test non-matching prefix - directory-based returns path as-is when no mapping found
+            self.assertEqual(
+                r.Rlocation("aaa/file1", "+different+repo"),
+                dir + "/aaa/file1",
+            )
+
+    def testCompactRepoMappingMixedExactAndPrefixed(self) -> None:
+        """Test mixing old exact format with new prefixed format."""
+        with _MockFile(
+            contents=[
+                ",old_style,old_target",  # Old exact format
+                "+new+*,new_style,new_target",  # New prefixed format
+                "+new+specific,new_style,specific_target",  # New exact format
+            ]
+        ) as rm, _MockFile(
+            contents=[
+                "_repo_mapping " + rm.Path(),
+                "old_target/file1 /path/to/old/file1",
+                "new_target/file2 /path/to/new/file2", 
+                "specific_target/file3 /path/to/specific/file3",
+            ],
+        ) as mf:
+            r = runfiles.CreateManifestBased(mf.Path())
+
+            # Test old exact format still works
+            self.assertEqual(
+                r.Rlocation("old_style/file1", ""),
+                "/path/to/old/file1",
+            )
+            
+            # Test new prefixed format
+            self.assertEqual(
+                r.Rlocation("new_style/file2", "+new+repo1"),
+                "/path/to/new/file2",
+            )
+            
+            # Test exact takes precedence over prefix for new format
+            self.assertEqual(
+                r.Rlocation("new_style/file3", "+new+specific"),
+                "/path/to/specific/file3",
+            )
+
+    def testCompactRepoMappingEdgeCases(self) -> None:
+        """Test edge cases for compact repo mapping."""
+        with _MockFile(
+            contents=[
+                "*,wildcard_target,wildcard_result",  # Prefix is just "*" (empty string prefix)
+                "+,empty_plus,empty_plus_result",  # Prefix is just "+" 
+                "+normal+*,normal,normal_result",
+            ]
+        ) as rm, _MockFile(
+            contents=[
+                "_repo_mapping " + rm.Path(),
+                "wildcard_result/file1 /path/to/wildcard/file1",
+                "empty_plus_result/file2 /path/to/empty_plus/file2",
+                "normal_result/file3 /path/to/normal/file3",
+            ],
+        ) as mf:
+            r = runfiles.CreateManifestBased(mf.Path())
+
+            # Test wildcard prefix (empty string)
+            self.assertEqual(
+                r.Rlocation("wildcard_target/file1", "anything"),
+                "/path/to/wildcard/file1",
+            )
+            
+            # Test empty prefix after "+"
+            self.assertEqual(
+                r.Rlocation("empty_plus/file2", "+"),
+                "/path/to/empty_plus/file2",
+            )
+            
+            # Test normal prefix
+            self.assertEqual(
+                r.Rlocation("normal/file3", "+normal+repo"),
+                "/path/to/normal/file3",
+            )
+
+    def testManifestBasedRlocationWithRepoMappingFromExtensionRepo(self) -> None:
+        """Test repository mapping from extension repositories with prefixed entries.
+        
+        This test mirrors the Java test testManifestBasedRlocationWithRepoMapping_fromExtensionRepo
+        to ensure compatibility with the compact repo mapping format.
+        """
+        with _MockFile(
+            contents=[
+                ",config.json,config.json~1.2.3",
+                ",my_module,_main",
+                ",my_protobuf,protobuf~3.19.2",
+                ",my_workspace,_main",
+                "my_module++ext+*,my_module,my_module+",
+                "my_module++ext+*,repo1,my_module++ext+repo1",
+            ]
+        ) as rm, _MockFile(
+            contents=[
+                "_repo_mapping " + rm.Path(),
+                "config.json /etc/config.json",
+                "protobuf~3.19.2/foo/runfile C:/Actual Path\\protobuf\\runfile",
+                "_main/bar/runfile /the/path/./to/other//other runfile.txt",
+                "protobuf~3.19.2/bar/dir E:\\Actual Path\\Directory",
+                "my_module+/foo/runfile /the/path/to/my_module+/runfile",
+                "my_module++ext+repo1/foo/runfile /the/path/to/my_module++ext+repo1/runfile",
+                "repo2+/foo/runfile /the/path/to/repo2+/runfile",
+            ],
+        ) as mf:
+            r = runfiles.CreateManifestBased(mf.Path())
+
+            # Test extension repository pattern: my_module++ext+* should match my_module++ext+repo1
+            self.assertEqual(
+                r.Rlocation("my_module/foo/runfile", "my_module++ext+repo1"),
+                "/the/path/to/my_module+/runfile",
+            )
+            self.assertEqual(
+                r.Rlocation("repo1/foo/runfile", "my_module++ext+repo1"),
+                "/the/path/to/my_module++ext+repo1/runfile",
+            )
+            
+            # Test that repository names with special characters work when no mapping is found
+            self.assertEqual(
+                r.Rlocation("repo2+/foo/runfile", "my_module++ext+repo1"),
+                "/the/path/to/repo2+/runfile",
+            )
+            
+            # Test from different extension repo that also matches the prefix
+            self.assertEqual(
+                r.Rlocation("my_module/foo/runfile", "my_module++ext+repo2"),
+                "/the/path/to/my_module+/runfile",
+            )
+            self.assertEqual(
+                r.Rlocation("repo1/foo/runfile", "my_module++ext+repo2"),
+                "/the/path/to/my_module++ext+repo1/runfile",
+            )
+
+    def testDirectoryBasedRlocationWithRepoMappingFromExtensionRepo(self) -> None:
+        """Test directory-based repository mapping from extension repositories with prefixed entries."""
+        with _MockFile(
+            name="_repo_mapping",
+            contents=[
+                ",config.json,config.json~1.2.3",
+                ",my_module,_main",
+                ",my_protobuf,protobuf~3.19.2",
+                ",my_workspace,_main",
+                "my_module++ext+*,my_module,my_module+",
+                "my_module++ext+*,repo1,my_module++ext+repo1",
+            ],
+        ) as rm:
+            dir = os.path.dirname(rm.Path())
+            r = runfiles.CreateDirectoryBased(dir)
+
+            # Test extension repository pattern
+            self.assertEqual(
+                r.Rlocation("my_module/foo", "my_module++ext+repo1"),
+                dir + "/my_module+/foo",
+            )
+            self.assertEqual(
+                r.Rlocation("repo1/foo", "my_module++ext+repo1"),
+                dir + "/my_module++ext+repo1/foo",
+            )
+            self.assertEqual(
+                r.Rlocation("repo2+/foo", "my_module++ext+repo1"),
+                dir + "/repo2+/foo",
+            )
+
     def testCurrentRepository(self) -> None:
         # Under bzlmod, the current repository name is the empty string instead
         # of the name in the workspace file.
