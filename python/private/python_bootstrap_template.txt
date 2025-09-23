@@ -471,6 +471,11 @@ source =
     kparams['stdout'] = sys.stderr
     kparams['stderr'] = sys.stderr
 
+  # Prevent coveragepy report issues when packages execute files in tmp dir.
+  import tempfile
+  omit_pattern = os.path.join(tempfile.gettempdir(), "*")
+  params.append(f'--omit={omit_pattern}')
+
   lcov_ret_code = subprocess.call(
     params,
     **kparams
